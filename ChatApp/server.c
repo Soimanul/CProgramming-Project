@@ -44,8 +44,8 @@ void broadcast_message(const char *message, int exclude_sock);
 void list_online_users(int sock);
 void list_chat_rooms(int sock);
 void join_chat_room(const char *room_name, Client *client);
-void list_users_in_chat_room(int sock, const char *room_name);
-void *handle_client(void *arg);
+void handle_client(int client_sock);
+void *client_handler(void *client_sock_ptr);
 
 int init_socket() {
     int sock;
@@ -128,10 +128,7 @@ void join_chat_room(const char *room_name, Client *client) {
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
             chat_rooms[i].clients[chat_rooms[i].client_count++] = client;
             strcpy(client->room, room_name);
-            printf("Client %s joined chat room %s\n", client->username, room_name);  
-            char message[BUFFER_SIZE];
-            snprintf(message, BUFFER_SIZE, "Joined chat room: %s\nTo see users in the chat room, use the command: /roomusers\n", room_name);
-            send(client->sock, message, strlen(message), 0);
+            printf("Client %s joined chat room %s\n", client->username, room_name); 
             pthread_mutex_unlock(&rooms_mutex);
             return;
         }
@@ -141,32 +138,11 @@ void join_chat_room(const char *room_name, Client *client) {
     chat_rooms[room_count].client_count = 1;
     strcpy(client->room, room_name);
     room_count++;
-    printf("Chat room %s created and client %s joined\n", room_name, client->username);  
-    char message[BUFFER_SIZE];
-    snprintf(message, BUFFER_SIZE, "Chat room %s created and joined\nTo see users in the chat room, use the command: /roomusers\n", room_name);
-    send(client->sock, message, strlen(message), 0);
+    printf("Chat room %s created and client %s joined\n", room_name, client->username); 
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-void list_users_in_chat_room(int sock, const char *room_name) {
-    pthread_mutex_lock(&rooms_mutex);
-    char message[BUFFER_SIZE] = "Users in chat room:\n";
-    for (int i = 0; i < room_count; i++) {
-        if (strcmp(chat_rooms[i].name, room_name) == 0) {
-            for (int j = 0; j < chat_rooms[i].client_count; j++) {
-                strcat(message, chat_rooms[i].clients[j]->username);
-                strcat(message, "\n");
-            }
-            break;
-        }
-    }
-    send(sock, message, strlen(message), 0);
-    pthread_mutex_unlock(&rooms_mutex);
-}
-
-void *handle_client(void *arg) {
-    int client_sock = *(int *)arg;
-    free(arg);
+void handle_client(int client_sock) {
     char buffer[BUFFER_SIZE];
     int read_size;
     char username[50];
@@ -190,27 +166,40 @@ void *handle_client(void *arg) {
         if (strncmp(buffer, "/msg ", 5) == 0) {
             char *target_username = strtok(buffer + 5, " ");
             char *message = strtok(NULL, "\0");
+
+            printf("Target username: %s\n", target_username);
+            printf("Message: %s\n", message);
+
+            int found = 0;
             pthread_mutex_lock(&clients_mutex);
             for (int i = 0; i < client_count; i++) {
+                printf("Checking client: %s\n", clients[i].username);
                 if (strcmp(clients[i].username, target_username) == 0) {
-                    send(clients[i].sock, message, strlen(message), 0);
+                    printf("Client found: %s\n", target_username);
+                    if (send(clients[i].sock, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                    } else {
+                        printf("Message sent to %s\n", target_username);
+                    }
+                    found = 1;
                     break;
                 }
             }
             pthread_mutex_unlock(&clients_mutex);
+
+            if (!found) {
+                if (send(client_sock, "User not found.\n", 17, 0) < 0) {
+                    perror("Send failed");
+                }
+                printf("Client not registered: %s\n", target_username);
+            }
         } else if (strncmp(buffer, "/list", 5) == 0) {
-            printf("Executing /list command\n");  
             list_online_users(client_sock);
         } else if (strncmp(buffer, "/rooms", 6) == 0) {
-            printf("Executing /rooms command\n");  
             list_chat_rooms(client_sock);
         } else if (strncmp(buffer, "/join ", 6) == 0) {
             char *room_name = buffer + 6;
-            printf("Executing /join command for room: %s\n", room_name); 
             join_chat_room(room_name, &clients[client_count - 1]);
-        } else if (strncmp(buffer, "/roomusers", 10) == 0) {
-            printf("Executing /roomusers command\n");  
-            list_users_in_chat_room(client_sock, clients[client_count - 1].room);
         } else if (strncmp(buffer, "/roommsg ", 9) == 0) {
             char *message = buffer + 9;
             pthread_mutex_lock(&rooms_mutex);
@@ -218,7 +207,9 @@ void *handle_client(void *arg) {
                 if (strcmp(chat_rooms[i].name, clients[client_count - 1].room) == 0) {
                     for (int j = 0; j < chat_rooms[i].client_count; j++) {
                         if (chat_rooms[i].clients[j]->sock != client_sock) {
-                            send(chat_rooms[i].clients[j]->sock, message, strlen(message), 0);
+                            if (send(chat_rooms[i].clients[j]->sock, message, strlen(message), 0) < 0) {
+                                perror("Send failed");
+                            }
                         }
                     }
                     break;
@@ -241,12 +232,17 @@ void *handle_client(void *arg) {
     #else
     close(client_sock);
     #endif
+}
 
+void *client_handler(void *client_sock_ptr) {
+    int client_sock = *(int *)client_sock_ptr;
+    free(client_sock_ptr); 
+    handle_client(client_sock);
     return NULL;
 }
 
 int main() {
-    int server_sock, *new_sock;
+    int server_sock, client_sock;
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
 
@@ -257,19 +253,19 @@ int main() {
 
     printf("Server listening on port %d\n", PORT);
 
-    while ((new_sock = malloc(sizeof(int)), *new_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_len)) >= 0) {
+    while ((client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_addr_len)) >= 0) {
         printf("Client connected\n");
-        pthread_t client_thread;
-        if (pthread_create(&client_thread, NULL, handle_client, (void*)new_sock) != 0) {
-            perror("Could not create thread");
-            free(new_sock);
+        pthread_t tid;
+        int *client_sock_ptr = malloc(sizeof(int)); 
+        *client_sock_ptr = client_sock;
+
+        if (pthread_create(&tid, NULL, client_handler, (void *)client_sock_ptr) != 0) {
+            perror("Thread creation failed");
         }
-        pthread_detach(client_thread);  
     }
 
-    if (*new_sock < 0) {
+    if (client_sock < 0) {
         perror("Accept failed");
-        free(new_sock);
     }
 
     #ifdef _WIN32

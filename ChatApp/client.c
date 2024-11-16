@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -16,8 +17,27 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
-const char *LAN = "192.168.1.130";
+const char *LAN = "10.93.122.232";
 const char *LOCAL = "127.0.0.1";
+
+void *receive_messages(void *sock) {
+    int server_sock = *(int *)sock;
+    char buffer[BUFFER_SIZE];
+    int read_size;
+
+    while ((read_size = recv(server_sock, buffer, BUFFER_SIZE, 0)) > 0) {
+        buffer[read_size] = '\0';
+        printf("%s\n", buffer);
+    }
+
+    if (read_size == 0) {
+        printf("Server disconnected\n");
+    } else if (read_size == -1) {
+        perror("Recv failed");
+    }
+
+    return NULL;
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -86,6 +106,12 @@ int main(int argc, char *argv[]) {
     fgets(message, BUFFER_SIZE, stdin);
     message[strcspn(message, "\n")] = 0;  
     send(sock, message, strlen(message), 0);
+
+    pthread_t recv_thread;
+    if (pthread_create(&recv_thread, NULL, receive_messages, (void*)&sock) != 0) {
+        perror("Could not create thread");
+        return 1;
+    }
 
     printf("Enter messages to send:\n");
 
