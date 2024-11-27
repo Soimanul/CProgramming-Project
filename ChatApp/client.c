@@ -1,23 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <pthread.h>
+#include "program.h"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib") 
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#endif
-
-#define PORT 8080
-#define BUFFER_SIZE 1024
-
-const char *LAN = "10.93.122.232";
+const char *LAN = "192.168.1.33"; // replace with YOUR IP
 const char *LOCAL = "127.0.0.1";
 
 void *receive_messages(void *sock) {

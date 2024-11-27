@@ -4,4 +4,4 @@ Compile both using gcc -o server server.c -lws2_32 and gcc -o client client.c -l
 
 ## Running
 
-run using ./server and ./client, client.c must have the right ip address of the server.
+run using ./server and ./client LAN  (client.c must have the right ip address of the server. To do so, replace your current Wireless LAN IPv4 Address in client.c )

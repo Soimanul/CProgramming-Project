@@ -1,53 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <pthread.h>
+#include "program.h"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#pragma comment(lib, "Ws2_32.lib") 
-typedef int socklen_t;  
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#endif
 
-#define PORT 8080
-#define BUFFER_SIZE 1024
-#define MAX_CLIENTS 100
-#define MAX_ROOMS 10
-#define MAX_ROOM_NAME 50
+// Global Variables
+Client clients[MAX_CLIENTS];           // Initialize the array of clients
+ChatRoom chat_rooms[MAX_ROOMS];        // Initialize the array of chat rooms
+int client_count = 0;                  // Initialize the client count to 0
+int room_count = 0;                    // Initialize the room count to 0
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;  // Initialize the mutex for clients
+pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;    // Initialize the mutex for rooms
 
-typedef struct {
-    int sock;
-    char username[50];
-    char room[MAX_ROOM_NAME];
-} Client;
-
-typedef struct {
-    char name[MAX_ROOM_NAME];
-    Client *clients[MAX_CLIENTS];
-    int client_count;
-} ChatRoom;
-
-Client clients[MAX_CLIENTS];
-ChatRoom chat_rooms[MAX_ROOMS];
-int client_count = 0;
-int room_count = 0;
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-int init_socket();
-void broadcast_message(const char *message, int exclude_sock);
-void list_online_users(int sock);
-void list_chat_rooms(int sock);
-void join_chat_room(const char *room_name, Client *client);
-void create_chat_room(const char *room_name, Client *creator, char *users);
-void room_message(const char *room_name, const char *message, const char *sender);
-void handle_client(int client_sock);
-void *client_handler(void *client_sock_ptr);
 
 int init_socket() {
     int sock;
