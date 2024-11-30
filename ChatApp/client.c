@@ -13,12 +13,16 @@ void *receive_messages(void *sock) {
     while ((read_size = recv(server_sock, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[read_size] = '\0';
         printf("%s\n", buffer);
+        if (strcmp(buffer, "Goodbye!") == 0) {
+            printf("Client successfully disconnected.\n");
+            exit(0);  // Gracefully exit the loop when the server disconnects
         }
+    }
 
     if (read_size == 0) {
         printf("Server disconnected\n");
     } else if (read_size == -1) {
-        perror("Recv failed");
+        perror("Receive failed");
     }
 
     return NULL;
@@ -99,8 +103,16 @@ int main(int argc, char *argv[]) {
 
     while (fgets(message, BUFFER_SIZE, stdin) != NULL) {
         send(sock, message, strlen(message), 0);
+
+        // Exit condition
+        if (strcmp(message, "exit\n") == 0) {
+            printf("Exiting...\n");
+            break; // Exit the loop
+        }
     }
 
+    // Ensure the receive thread finishes before cleaning up
+    pthread_join(recv_thread, NULL);
     #ifdef _WIN32
     closesocket(sock);
     WSACleanup();
