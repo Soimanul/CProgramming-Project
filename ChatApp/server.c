@@ -170,37 +170,78 @@ void join_chat_room(const char *room_name, Client *client) {
 }
 
 
-void create_chat_room(const char *room_name, Client *creator, char *users) {
-    pthread_mutex_lock(&rooms_mutex);
-   
-    strcpy(chat_rooms[room_count].name, room_name);
-    strcpy(chat_rooms[room_count].creator_username, creator->username);  // Store the creator's username
-    chat_rooms[room_count].clients[0] = creator;
-    chat_rooms[room_count].client_count = 1;
-    strcpy(creator->room, room_name);
-   
-    printf("Creator room set to: %s\n", creator->room);
+void create_chat_room(int client_sock) {
+    char buffer[BUFFER_SIZE];
+    int read_size;
+    char room_name[MAX_ROOM_NAME];
+    char users[BUFFER_SIZE];
 
+    // Ask for room name
+    send(client_sock, "Enter room name: ", 17, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(room_name, buffer);
+    room_name[strcspn(room_name, "\r\n")] = 0;
 
-    char *username = strtok(users, " ");
-    while (username != NULL) {
-        for (int i = 0; i < client_count; i++) {
-            if (strcmp(clients[i].username, username) == 0) {
-                printf("Adding user to room: %s\n", username);
-                chat_rooms[room_count].clients[chat_rooms[room_count].client_count++] = &clients[i];
-                strcpy(clients[i].room, room_name);
-                printf("User %s room set to: %s\n", username, clients[i].room);
-                break;
-            }
+    // Ask for usernames to add to the room
+    send(client_sock, "Enter usernames (space-separated): ", 35, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(users, buffer);
+    users[strcspn(users, "\r\n")] = 0;
+
+    // Find the client who is creating the room by their socket
+    Client *room_creator = NULL;
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].sock == client_sock) {
+            room_creator = &clients[i];
+            break;
         }
-        username = strtok(NULL, " ");
     }
+    pthread_mutex_unlock(&clients_mutex);
 
+    // If the room creator is found, proceed to create the chat room
+    if (room_creator) {
+        pthread_mutex_lock(&rooms_mutex);
 
-    room_count++;
-    printf("Room created. Room count: %d, Room clients: %d\n", room_count, chat_rooms[room_count-1].client_count);
-    pthread_mutex_unlock(&rooms_mutex);
+        // Create the room and assign the creator
+        strcpy(chat_rooms[room_count].name, room_name);
+        strcpy(chat_rooms[room_count].creator_username, room_creator->username);  // Store the creator's username
+        chat_rooms[room_count].clients[0] = room_creator;
+        chat_rooms[room_count].client_count = 1;
+        strcpy(room_creator->room, room_name);
+
+        printf("Creator room set to: %s\n", room_creator->room);
+
+        // Add users to the room
+        char *username = strtok(users, " ");
+        while (username != NULL) {
+            for (int i = 0; i < client_count; i++) {
+                if (strcmp(clients[i].username, username) == 0) {
+                    printf("Adding user to room: %s\n", username);
+                    chat_rooms[room_count].clients[chat_rooms[room_count].client_count++] = &clients[i];
+                    strcpy(clients[i].room, room_name);
+                    printf("User %s room set to: %s\n", username, clients[i].room);
+                    break;
+                }
+            }
+            username = strtok(NULL, " ");
+        }
+
+        room_count++;
+        printf("Room created. Room count: %d, Room clients: %d\n", room_count, chat_rooms[room_count-1].client_count);
+        pthread_mutex_unlock(&rooms_mutex);
+
+        // Send confirmation to the client who created the room
+        send(client_sock, "Room created successfully!\n", 26, 0);
+    } else {
+        // Handle error: couldn't find room creator
+        send(client_sock, "Error creating room\n", 20, 0);
+    }
 }
+
+
 void message_chatroom(const char *room_name, const char *message, const char *sender) {
     pthread_mutex_lock(&rooms_mutex);
     char full_message[BUFFER_SIZE];
@@ -289,44 +330,11 @@ void handle_client(int client_sock) {
                 private_message(client_sock, username);
                 break;  
             }
-            // In your handle_client function, modify the room creation case
             case 2: {
-                send(client_sock, "Enter room name: ", 17, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char room_name[MAX_ROOM_NAME];
-                strcpy(room_name, buffer);
-                room_name[strcspn(room_name, "\r\n")] = 0;
-
-
-                send(client_sock, "Enter usernames (space-separated): ", 35, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char users[BUFFER_SIZE];
-                strcpy(users, buffer);
-                users[strcspn(users, "\r\n")] = 0;
-
-
-                // Find the client who is creating the room by their socket
-                Client *room_creator = NULL;
-                pthread_mutex_lock(&clients_mutex);
-                for (int i = 0; i < client_count; i++) {
-                    if (clients[i].sock == client_sock) {
-                        room_creator = &clients[i];
-                        break;
-                    }
-                }
-                pthread_mutex_unlock(&clients_mutex);
-
-
-                if (room_creator) {
-                    create_chat_room(room_name, room_creator, users);
-                } else {
-                    // Handle error: couldn't find room creator
-                    send(client_sock, "Error creating room\n", 20, 0);
-                }
+                create_chat_room(client_sock);
                 break;
             }
+            
             case 3: {
                 send(client_sock, "Enter room name: ", 17, 0);
                 read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
