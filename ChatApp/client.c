@@ -1,6 +1,6 @@
 #include "program.h"
 
-const char *LAN = "192.168.1.33"; // replace with YOUR IP
+const char *LAN = "192.168.56.1"; // replace with YOUR IP
 const char *LOCAL = "127.0.0.1";
 
 // runs in its own thread
