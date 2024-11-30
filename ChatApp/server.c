@@ -242,22 +242,42 @@ void create_chat_room(int client_sock) {
 }
 
 
-void message_chatroom(const char *room_name, const char *message, const char *sender) {
+void message_chatroom(int client_sock, const char *sender) {
+    char buffer[BUFFER_SIZE];
+    int read_size;
+    char room_name[MAX_ROOM_NAME];
+    char message[BUFFER_SIZE];
+
+    // Receive room name
+    send(client_sock, "Enter room name: ", 17, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(room_name, buffer);
+    room_name[strcspn(room_name, "\r\n")] = 0;
+
+    // Receive message
+    send(client_sock, "Enter message: ", 15, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(message, buffer);
+    message[strcspn(message, "\r\n")] = 0;
+
+    // Now call the original message_chatroom logic with the received room and message
     pthread_mutex_lock(&rooms_mutex);
     char full_message[BUFFER_SIZE];
     snprintf(full_message, BUFFER_SIZE, "%s/%s: %s", room_name, sender, message);
-
 
     printf("Attempting to send room message\n");
     printf("Room: %s, Sender: %s\n", room_name, sender);
     printf("Total rooms: %d\n", room_count);
 
-
+    // Find the room and send the message
     for (int i = 0; i < room_count; i++) {
         printf("Checking room %d: %s\n", i, chat_rooms[i].name);
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
             printf("Found matching room. Clients in room: %d\n", chat_rooms[i].client_count);
-           
+
+            // List clients in the room for debugging
             for (int j = 0; j < chat_rooms[i].client_count; j++) {
                 printf("Client %d - Username: %s, Assigned Room: %s\n",
                        j,
@@ -265,12 +285,12 @@ void message_chatroom(const char *room_name, const char *message, const char *se
                        chat_rooms[i].clients[j]->room);
             }
 
-
+            // Send the message to all clients in the room
             for (int j = 0; j < chat_rooms[i].client_count; j++) {
                 if (strcmp(chat_rooms[i].clients[j]->room, room_name) == 0 &&
                     strcmp(chat_rooms[i].clients[j]->username, sender) != 0) {
                     printf("Sending message to: %s\n", chat_rooms[i].clients[j]->username);
-                   
+
                     if (send(chat_rooms[i].clients[j]->sock, full_message, strlen(full_message), 0) < 0) {
                         perror("Send failed");
                     }
@@ -281,6 +301,7 @@ void message_chatroom(const char *room_name, const char *message, const char *se
     }
     pthread_mutex_unlock(&rooms_mutex);
 }
+
 
 
 void display_menu(int client_sock) {
@@ -336,23 +357,7 @@ void handle_client(int client_sock) {
             }
             
             case 3: {
-                send(client_sock, "Enter room name: ", 17, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char room_name[MAX_ROOM_NAME];
-                strcpy(room_name, buffer);
-                room_name[strcspn(room_name, "\r\n")] = 0;
-
-
-                send(client_sock, "Enter message: ", 15, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char message[BUFFER_SIZE];
-                strcpy(message, buffer);
-                message[strcspn(message, "\r\n")] = 0;
-
-
-                message_chatroom(room_name, message, username);
+                message_chatroom(client_sock, username);
                 break;
             }
             case 4:

@@ -59,7 +59,7 @@ void list_online_users(int sock);  // List all online users for a client
 void list_chat_rooms(int sock);    // List all available chat rooms for a client
 void join_chat_room(const char *room_name, Client *client);   // Join a chat room
 void create_chat_room(int client_sock);  // Create a new chat room
-void message_chatroom(const char *room_name, const char *message, const char *sender);  // Send a message to all clients in a room
+void message_chatroom(int client_sock, const char *sender); // Send a message to all clients in a room
 void handle_client(int client_sock);  // Handle client communication
 void *client_handler(void *client_sock_ptr);  // Threaded function to handle client communication
 
