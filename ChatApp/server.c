@@ -76,6 +76,25 @@ void private_message(int client_sock, const char *username) { // uses client soc
     strcpy(target_username, buffer); 
     target_username[strcspn(target_username, "\r\n")] = 0;  // handles possible \n  to clean input
 
+    int found = 0;
+    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource 
+    for (int i = 0; i < client_count; i++) { 
+        if (strcmp(clients[i].username, target_username) == 0) { // loop continues until we find target usernmae
+            found = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array
+
+    // other possible error: not finidng the username
+    if (!found) {
+        if (send(client_sock, "User was not found.\n", 21, 0) < 0) { // sends client
+            perror("Send failed");
+        }
+        printf("Client not registered: %s\n", target_username); // prints in server's console
+        return;
+    }
+
     // asks user for desired mesage to send
     send(client_sock, "Enter message: ", 15, 0);
 
@@ -85,8 +104,7 @@ void private_message(int client_sock, const char *username) { // uses client soc
     strcpy(message, buffer);
     message[strcspn(message, "\r\n")] = 0;  
 
-    int found = 0;
-    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoidsd other threads to access same resource 
+    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource 
     for (int i = 0; i < client_count; i++) { 
         if (strcmp(clients[i].username, target_username) == 0) { // loop continues until we find target usernmae
             char full_message[BUFFER_SIZE];
@@ -96,19 +114,10 @@ void private_message(int client_sock, const char *username) { // uses client soc
             } else {
                 printf("Message sent to %s\n", target_username); //else me we let client know message was sent
             }
-            found = 1;
             break;
         }
     }
     pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array
-
-    // other possible error: not finidng the username
-    if (!found) {
-        if (send(client_sock, "User not found.\n", 17, 0) < 0) { // sends client
-            perror("Send failed");
-        }
-        printf("Client not registered: %s\n", target_username); // prints in server's console
-    }
 }
 
 
@@ -118,12 +127,26 @@ void create_chat_room(int client_sock) { // uses client's socket descriptor
     char room_name[MAX_ROOM_NAME];
     char users[BUFFER_SIZE];
 
-    //Prompts for desired room name
+    // Prompts for desired room name
     send(client_sock, "Enter room name: ", 17, 0);
     read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
     buffer[read_size] = '\0';
     strcpy(room_name, buffer);
     room_name[strcspn(room_name, "\r\n")] = 0;
+
+    pthread_mutex_lock(&rooms_mutex);
+
+    // Check if there's already a room with that name
+    for (int i = 0; i < room_count; i++) {
+        if (strcmp(chat_rooms[i].name, room_name) == 0) {
+            printf("Error: Chat room '%s' already exists.\n", room_name); // Error message if room already exists
+            send(client_sock, "Error: Chat room already exists.\n", 34, 0);
+            pthread_mutex_unlock(&rooms_mutex);
+            return;
+        }
+    }
+
+    pthread_mutex_unlock(&rooms_mutex);
 
     // Asks for usernames to add to the room
     send(client_sock, "Enter usernames (space-separated): ", 35, 0);
@@ -133,7 +156,7 @@ void create_chat_room(int client_sock) { // uses client's socket descriptor
     strcpy(users, buffer); 
     users[strcspn(users, "\r\n")] = 0; 
 
-    // find creator's socket to place in the first possiton of the array for consistency
+    // Find creator's socket to place in the first position of the array for consistency
     Client *room_creator = NULL; // pointer to room_creator
     pthread_mutex_lock(&clients_mutex); 
     for (int i = 0; i < client_count; i++) {
@@ -142,46 +165,55 @@ void create_chat_room(int client_sock) { // uses client's socket descriptor
             break;
         }
     }
-    pthread_mutex_unlock(&clients_mutex);
 
-    // after including creator, 
     if (room_creator) {
-        pthread_mutex_lock(&rooms_mutex);
+        pthread_mutex_lock(&rooms_mutex); // Lock rooms mutex before creating room
 
         // Create the room and assign the creator
         strcpy(chat_rooms[room_count].name, room_name);
         strcpy(chat_rooms[room_count].creator_username, room_creator->username);  // Store the creator's username
-        chat_rooms[room_count].clients[0] = room_creator; //Now it is in idx 0 of chat_rooms array 
-        chat_rooms[room_count].client_count = 1; // update chatroom's client count 
-        strcpy(room_creator->room, room_name); // updates the chatroom array in client struct 
+        chat_rooms[room_count].clients[0] = room_creator; // Now it is in idx 0 of chat_rooms array 
+        chat_rooms[room_count].client_count = 1; // Update chatroom's client count 
+        strcpy(room_creator->room, room_name); // Updates the chatroom array in client struct 
 
         printf("Creator room set to: %s\n", room_creator->room);
 
         // Add users to the room
-        char *username = strtok(users, " "); // tokenizes to extract sub arrays 
+        char *username = strtok(users, " "); // Tokenizes to extract sub arrays 
         while (username != NULL) {
+            int users_found = 0;
             for (int i = 0; i < client_count; i++) { // looks for users
                 if (strcmp(clients[i].username, username) == 0) {
                     printf("Adding user to room: %s\n", username);
                     chat_rooms[room_count].clients[chat_rooms[room_count].client_count++] = &clients[i];
                     strcpy(clients[i].room, room_name);
                     printf("User %s room set to: %s\n", username, clients[i].room);
+                    users_found = 1;
                     break;
                 }
             }
-            username = strtok(NULL, " "); //It then moves to the next subarray
+            if (!users_found) { // If the user doesn't exist
+                char error_message[BUFFER_SIZE];
+                snprintf(error_message, BUFFER_SIZE, "Error: User '%s' does not exist.\n", username);
+                send(client_sock, error_message, strlen(error_message), 0);
+                printf("Error: User '%s' does not exist.\n", username);
+            }
+            username = strtok(NULL, " "); // Move to the next subarray
         }
 
         room_count++;
-        printf("Room created. Room count: %d, Room clients: %d\n", room_count, chat_rooms[room_count-1].client_count);
-        pthread_mutex_unlock(&rooms_mutex);
+        printf("Room created. Room count: %d, Room clients: %d\n", room_count, chat_rooms[room_count - 1].client_count);
+        pthread_mutex_unlock(&rooms_mutex); // Unlock rooms_mutex after creating the room
 
-        //Sends confirmation to the client who created the room
+        // Sends confirmation to the client who created the room
         send(client_sock, "Room created successfully!\n", 26, 0);
     } else {
-        //Possible edge case: couldn't find room creator
+        pthread_mutex_unlock(&clients_mutex); // Unlock in case room_creator is not found
+        // Possible edge case: couldn't find room creator
         send(client_sock, "Error creating room\n", 20, 0);
     }
+
+    pthread_mutex_unlock(&clients_mutex); // Ensure mutex is unlocked
 }
 
 void message_chatroom(int client_sock, const char *sender) {
@@ -198,26 +230,52 @@ void message_chatroom(int client_sock, const char *sender) {
     strcpy(room_name, buffer);
     room_name[strcspn(room_name, "\r\n")] = 0;
 
-    //prompt for message user wants to deliver 
+    // making sure the room exists or not
+    int is_room_found = 0;
+    int is_sender_member = 0;
+    pthread_mutex_lock(&rooms_mutex); // locks chatrooms array
+    for (int i = 0; i < room_count; i++) {
+        if (strcmp(chat_rooms[i].name, room_name) == 0) {
+            is_room_found = 1;
+
+            // we should check that the sender is actually part of the room
+            for (int j = 0; j < chat_rooms[i].client_count; j++) {
+                if (strcmp(chat_rooms[i].clients[j]->username, sender) == 0) {
+                    is_sender_member = 1;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+    // If room doesn't exist, notify client and return without allowing message input
+    if (!is_room_found) {
+        printf("Error: Chat room '%s' does not exist.\n", room_name);
+        send(client_sock, "Error: Chat room does not exist.\n", 34, 0);
+        pthread_mutex_unlock(&rooms_mutex);
+        return; // exit the function so they can't enter a message
+    }
+    if (!is_sender_member) {
+        send(client_sock, "Error: You are not a member of this room.\n", 42, 0);
+        pthread_mutex_unlock(&rooms_mutex);
+        return; // exit the function so they can't enter a message
+    }
+    // prompt for message user wants to deliver 
     send(client_sock, "Enter message: ", 15, 0);
 
-     // server recieves message
+    // server recieves message
     read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
     buffer[read_size] = '\0';
     strcpy(message, buffer);
     message[strcspn(message, "\r\n")] = 0;
 
-    
-    pthread_mutex_lock(&rooms_mutex); // locks chatrooms array
     char full_message[BUFFER_SIZE];
-    snprintf(full_message, BUFFER_SIZE, "%s/%s: %s", room_name, sender, message); // format print statment "chatroom name/sender: Message"
+    snprintf(full_message, BUFFER_SIZE, "%s/%s: %s", room_name, sender, message); // format print statement "chatroom name/sender: Message"
 
-    // Find room  in chat_rooms to send message 
+    // Find room in chat_rooms to send message 
     for (int i = 0; i < room_count; i++) {
-        printf("Checking room %d: %s\n", i, chat_rooms[i].name);
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
-            printf("Found matching room. Clients in room: %d\n", chat_rooms[i].client_count);
-            // once chat room is found, we cna now send the message (to all except sender)
+            // once chat room is found, we can now send the message (to all except sender)
             for (int j = 0; j < chat_rooms[i].client_count; j++) {
                 if (strcmp(chat_rooms[i].clients[j]->room, room_name) == 0 &&
                     strcmp(chat_rooms[i].clients[j]->username, sender) != 0) {
@@ -234,7 +292,6 @@ void message_chatroom(int client_sock, const char *sender) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-
 void list_online_users(int sock) {
     pthread_mutex_lock(&clients_mutex); // locks clients array 
 
@@ -250,14 +307,22 @@ void list_online_users(int sock) {
 }
 
 void list_chat_rooms(int sock) {
-    pthread_mutex_lock(&rooms_mutex); // locks chat room array 
-    char message[BUFFER_SIZE] = "Chat rooms:\n";
-    for (int i = 0; i < room_count; i++) {
-        strcat(message, chat_rooms[i].name);
-        strcat(message, "\n");
-    }
-    if (send(sock, message, strlen(message), 0) < 0) {
-        perror("Send failed");
+    pthread_mutex_lock(&rooms_mutex); // locks chat room array
+    if (room_count == 0) {
+        // If there are no chat rooms, send a message indicating so
+        const char *no_rooms_message = "No chat rooms available.\n";
+        if (send(sock, no_rooms_message, strlen(no_rooms_message), 0) < 0) {
+            perror("Send failed");
+        }
+    } else {
+        char message[BUFFER_SIZE] = "Chat rooms:\n";
+        for (int i = 0; i < room_count; i++) {
+            strcat(message, chat_rooms[i].name);
+            strcat(message, "\n");
+        }
+        if (send(sock, message, strlen(message), 0) < 0) {
+            perror("Send failed");
+        }
     }
     pthread_mutex_unlock(&rooms_mutex);
 }
@@ -279,6 +344,14 @@ void join_chat_room(int client_sock, Client *client) {
     strcpy(room_name, buffer);
     room_name[strcspn(room_name, "\r\n")] = 0;
 
+    // we make sure the user isn't already in the room
+    if (strcmp(client->room, room_name) == 0) {
+        printf("Error: User '%s' is already in the room '%s'.\n", client->username, room_name);
+        send(client_sock, "Error: You are already in this room.\n", 37, 0);
+        pthread_mutex_unlock(&rooms_mutex);
+        return;
+    }
+
     // loop thorugh existing chat rooms 
     for (int i = 0; i < room_count; i++) {
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
@@ -290,14 +363,10 @@ void join_chat_room(int client_sock, Client *client) {
         }
     }
 
-    // Create a new room if it doesn't exist
-    strcpy(chat_rooms[room_count].name, room_name);
-    chat_rooms[room_count].clients[0] = client;
-    chat_rooms[room_count].client_count = 1;
-    strcpy(client->room, room_name);
-    room_count++;
+    // checking for the edge case of a room that doesnt exist
+    printf("Error: Chat room '%s' does not exist.\n", room_name);
+    send(client_sock, "Error: Chat room does not exist.\n", 34, 0);
 
-    printf("Chat room %s created and client %s joined\n", room_name, client->username);
     pthread_mutex_unlock(&rooms_mutex);
 }
 
@@ -342,8 +411,37 @@ void display_menu(int client_sock) {
         "5. List chat rooms\n"
         "6. Join a chat room\n"
         "7. Broadcast a message\n"
+        "8. Exit program\n"
         "Enter your choice: ";
     send(client_sock, menu, strlen(menu), 0);
+}
+
+void disconnect_client(int client_sock, const char *username) {
+    pthread_mutex_lock(&clients_mutex);
+
+    // Find the client in the clients array
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].sock == client_sock) {
+            // Shift remaining clients
+            for (int j = i; j < client_count - 1; j++) {
+                clients[j] = clients[j + 1];
+            }
+            client_count--;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+    printf("Client '%s' disconnected\n", username);
+
+    // Inform the client
+    send(client_sock, "Goodbye!", 8, 0);
+
+    #ifdef _WIN32
+    closesocket(client_sock);
+    #else
+    close(client_sock);
+    #endif
 }
 
 
@@ -351,19 +449,36 @@ void handle_client(int client_sock) {
     char buffer[BUFFER_SIZE];
     int read_size;
     char username[50];
+    int unique;
 
+    do {
+        unique = 1; // Assume the username is unique initially
 
-    if ((read_size = recv(client_sock, username, 50, 0)) > 0) {
-        username[read_size] = '\0';
-        username[strcspn(username, "\r\n")] = 0;
-        pthread_mutex_lock(&clients_mutex);
-        clients[client_count].sock = client_sock;
-        strcpy(clients[client_count].username, username);
-        client_count++;
-        pthread_mutex_unlock(&clients_mutex);
-        printf("%s joined the chat\n", username);
-    }
+        // Receive the username from the client
+        if ((read_size = recv(client_sock, username, 50, 0)) > 0) {
+            username[read_size] = '\0';
+            username[strcspn(username, "\r\n")] = 0; // Clean up input
 
+            pthread_mutex_lock(&clients_mutex); // Lock to check existing usernames
+            for (int i = 0; i < client_count; i++) {
+                if (strcmp(clients[i].username, username) == 0) {
+                    unique = 0; // Username already exists
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&clients_mutex); // Unlock after checking
+
+            if (!unique) {
+                send(client_sock, "Username already taken. Try again.\nEnter your username:", 56, 0);
+            }
+        } 
+    } while (!unique);
+    pthread_mutex_lock(&clients_mutex);
+    clients[client_count].sock = client_sock;
+    strcpy(clients[client_count].username, username);
+    client_count++;
+    pthread_mutex_unlock(&clients_mutex);
+    printf("%s joined the chat\n", username);
 
     display_menu(client_sock);
 
@@ -402,6 +517,9 @@ void handle_client(int client_sock) {
                 broadcast_message(client_sock);
                 break;
             }
+            case 8:
+                disconnect_client(client_sock, username);
+                return;
             default:
                 send(client_sock, "Invalid choice. Please try again.\n", 34, 0);
                 break;
