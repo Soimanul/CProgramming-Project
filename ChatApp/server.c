@@ -108,17 +108,32 @@ void private_message(int client_sock, const char *username) {
 }
 
 
-void broadcast_message(const char *message, int exclude_sock) {
+void broadcast_message(int client_sock) {
     pthread_mutex_lock(&clients_mutex);
+    
+    char buffer[BUFFER_SIZE];
+    int read_size;
+    char message[BUFFER_SIZE];
+
+    // Receive message from the client
+    send(client_sock, "Enter message: ", 15, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(message, buffer);
+    message[strcspn(message, "\r\n")] = 0;
+
+    // Broadcast the message to all clients excluding the sender
     for (int i = 0; i < client_count; i++) {
-        if (clients[i].sock != exclude_sock) {
+        if (clients[i].sock != client_sock) {
             if (send(clients[i].sock, message, strlen(message), 0) < 0) {
                 perror("Send failed");
             }
         }
     }
+
     pthread_mutex_unlock(&clients_mutex);
 }
+
 
 
 void list_online_users(int sock) {
@@ -149,8 +164,21 @@ void list_chat_rooms(int sock) {
 }
 
 
-void join_chat_room(const char *room_name, Client *client) {
+void join_chat_room(int client_sock, Client *client) {
     pthread_mutex_lock(&rooms_mutex);
+    
+    char buffer[BUFFER_SIZE];
+    int read_size;
+    char room_name[MAX_ROOM_NAME];
+
+    // Receive room name
+    send(client_sock, "Enter room name: ", 17, 0);
+    read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    buffer[read_size] = '\0';
+    strcpy(room_name, buffer);
+    room_name[strcspn(room_name, "\r\n")] = 0;
+
+    // Try to join an existing room
     for (int i = 0; i < room_count; i++) {
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
             chat_rooms[i].clients[chat_rooms[i].client_count++] = client;
@@ -160,11 +188,14 @@ void join_chat_room(const char *room_name, Client *client) {
             return;
         }
     }
+
+    // Create a new room if it doesn't exist
     strcpy(chat_rooms[room_count].name, room_name);
     chat_rooms[room_count].clients[0] = client;
     chat_rooms[room_count].client_count = 1;
     strcpy(client->room, room_name);
     room_count++;
+
     printf("Chat room %s created and client %s joined\n", room_name, client->username);
     pthread_mutex_unlock(&rooms_mutex);
 }
@@ -367,27 +398,11 @@ void handle_client(int client_sock) {
                 list_chat_rooms(client_sock);
                 break;
             case 6: {
-                send(client_sock, "Enter room name: ", 17, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char room_name[MAX_ROOM_NAME];
-                strcpy(room_name, buffer);
-                room_name[strcspn(room_name, "\r\n")] = 0;
-
-
-                join_chat_room(room_name, &clients[client_count - 1]);
+                join_chat_room(client_sock, &clients[client_count - 1]);
                 break;
             }
             case 7: {
-                send(client_sock, "Enter message: ", 15, 0);
-                read_size = recv(client_sock, buffer, BUFFER_SIZE, 0);
-                buffer[read_size] = '\0';
-                char message[BUFFER_SIZE];
-                strcpy(message, buffer);
-                message[strcspn(message, "\r\n")] = 0;
-
-
-                broadcast_message(message, client_sock);
+                broadcast_message(client_sock);
                 break;
             }
             default:
