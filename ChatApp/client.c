@@ -97,8 +97,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Enter messages to send:\n");
-
     while (fgets(message, BUFFER_SIZE, stdin) != NULL) {
         send(sock, message, strlen(message), 0);
     }

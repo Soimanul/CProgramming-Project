@@ -54,14 +54,16 @@ extern pthread_mutex_t rooms_mutex;           // Mutex for chat rooms array
 
 // Function Prototypes
 int init_socket();  // Initialize server socket and return the socket descriptor
+
 void private_message(int client_sock, const char *username);
-void broadcast_message(int client_sock); // Broadcast message to clients in the same room (excluding a specific socket)
+void create_chat_room(int client_sock);  // Create a new chat room
+void message_chatroom(int client_sock, const char *sender); // Send a message to all clients in a room
 void list_online_users(int sock);  // List all online users for a client
 void list_chat_rooms(int sock);    // List all available chat rooms for a client
 void join_chat_room(int client_sock, Client *client);  // Join a chat room
-void create_chat_room(int client_sock);  // Create a new chat room
-void message_chatroom(int client_sock, const char *sender); // Send a message to all clients in a room
-void handle_client(int client_sock);  // Handle client communication
+void broadcast_message(int client_sock); // Broadcast message to clients in the same room (excluding a specific socket)
+
+void handle_client(int client_sock);  // Handles menu cases
 void *client_handler(void *client_sock_ptr);  // Threaded function to handle client communication
 
 #endif
