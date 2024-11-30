@@ -3,15 +3,17 @@
 const char *LAN = "192.168.1.33"; // replace with YOUR IP
 const char *LOCAL = "127.0.0.1";
 
+// runs in its own thread
 void *receive_messages(void *sock) {
-    int server_sock = *(int *)sock;
-    char buffer[BUFFER_SIZE];
-    int read_size;
+    int server_sock = *(int *)sock; // sock is casted to an int pointer, then derefernced to get socket descriptor
+    char buffer[BUFFER_SIZE]; // will temporary hold incoming data 
+    int read_size; // stores # of bytes successfully read during recv call
 
+    // client is ready to recieve messages as soon as it connects to server
     while ((read_size = recv(server_sock, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[read_size] = '\0';
         printf("%s\n", buffer);
-    }
+        }
 
     if (read_size == 0) {
         printf("Server disconnected\n");
@@ -25,8 +27,7 @@ void *receive_messages(void *sock) {
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <LAN|LOCAL>\n", argv[0]);
-        return 1;
-    }
+        return 1;}
 
     const char *server_ip;
     if (strcmp(argv[1], "LAN") == 0) {
@@ -45,15 +46,15 @@ int main(int argc, char *argv[]) {
     char message[BUFFER_SIZE];
 
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        printf("WSAStartup failed with error code %d\n", WSAGetLastError());
-        return 1;
-    }
+        printf("WSAStartup failed\n");
+        exit(1);
+        }
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-        printf("Socket creation failed with error code %d\n", WSAGetLastError());
+        printf("Socket creation failed\n");
         WSACleanup();
-        return 1;
-    }
+        exit(1);
+        }
     #else
     int sock;
     struct sockaddr_in server_addr;
