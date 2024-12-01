@@ -1,21 +1,21 @@
 #include "program.h"
 
-const char *LAN = "192.168.56.1"; // replace with YOUR IP
+const char *LAN = "192.168.56.1"; // replace with YOUR OWN IP
 const char *LOCAL = "127.0.0.1";
 
 // runs in its own thread
 void *receive_messages(void *sock) {
-    int server_sock = *(int *)sock; // sock is casted to an int pointer, then derefernced to get socket descriptor
-    char buffer[BUFFER_SIZE]; // will temporary hold incoming data 
-    int read_size; // stores # of bytes successfully read during recv call
+    int server_sock = *(int *)sock; // sock is casted to an int pointer, then we get the socket descriptor from it
+    char buffer[BUFFER_SIZE]; // will hold incoming data for a small amount of time
+    int read_size; // stores # of bytes succesfully read during the recv call
 
-    // client is ready to recieve messages as soon as it connects to server
+    // the client should be ready to recieve messages as soon as it connects to the server
     while ((read_size = recv(server_sock, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[read_size] = '\0';
         printf("%s\n", buffer);
         if (strcmp(buffer, "Goodbye!") == 0) {
             printf("Client successfully disconnected.\n");
-            exit(0);  // Gracefully exit the loop when the server disconnects
+            exit(0);  //  exit the loop when the servr disconnects
         }
     }
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(argv[1], "LOCAL") == 0) {
         server_ip = LOCAL;
     } else {
-        fprintf(stderr, "Invalid argument. Use 'LAN' or 'LOCAL'.\n");
+        fprintf(stderr, "Invalid argument. Please use 'LAN' or 'LOCAL'.\n");
         return 1;
     }
 
@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Ensure the receive thread finishes before cleaning up
+    // Make sure that the receive thread is finished before cleaning everything up
     pthread_join(recv_thread, NULL);
     #ifdef _WIN32
     closesocket(sock);
