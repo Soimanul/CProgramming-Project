@@ -3,12 +3,12 @@
 
 #include <stdio.h>      // For input/output functions like printf, fgets, and perror
 #include <stdlib.h>     // For dynamic memory allocation and general utilities
-#include <string.h>     // For string manipulation functions like strcmp, strlen, strcspn
+#include <string.h>     // For string manipulation functions llike strcmp, strlen, strcspn
 #include <pthread.h>    // For thread handling with pthread_create
 
 #ifdef _WIN32
 // Windows-specific libraries
-#include <winsock2.h>   // For socket programming on Windows
+#include <winsock2.h>   // For socket programming on Windows ONLY
 #include <ws2tcpip.h>   // For InetPton and related network functions
 #pragma comment(lib, "Ws2_32.lib")  // Link with Ws2_32.lib for Windows socket functionality
 typedef int socklen_t;  // Define socklen_t for Windows compatibility
@@ -20,9 +20,9 @@ typedef int socklen_t;  // Define socklen_t for Windows compatibility
 #include <unistd.h>     // For close function to close sockets
 #endif
 
-#define PORT 8080           // Port number for the server
-#define BUFFER_SIZE 1024    // Size of the buffer for messages
-#define MAX_CLIENTS 100     // Maximum number of clients the server can handle
+#define PORT 8080           // Port number for server
+#define BUFFER_SIZE 1024    // Size of the bufffer for mesages
+#define MAX_CLIENTS 100     // Maximum number of clients server handles
 #define MAX_ROOMS 10        // Maximum number of chat rooms
 #define MAX_ROOM_NAME 50    // Maximum length of a room name
 
@@ -45,12 +45,12 @@ typedef struct {
 void *receive_messages(void *sock); 
 
 // Global Variables (extern declaration)
-extern Client clients[MAX_CLIENTS];           // Array of clients
-extern ChatRoom chat_rooms[MAX_ROOMS];        // Array of chat rooms
+extern Client clients[MAX_CLIENTS];           // Array clients
+extern ChatRoom chat_rooms[MAX_ROOMS];        // Array chat rooms
 extern int client_count;                      // Number of connected clients
-extern int room_count;                        // Number of chat rooms
-extern pthread_mutex_t clients_mutex;         // Mutex for clients array
-extern pthread_mutex_t rooms_mutex;           // Mutex for chat rooms array
+extern int room_count;                        // Number chat rooms
+extern pthread_mutex_t clients_mutex;         // Mutex used for clients array
+extern pthread_mutex_t rooms_mutex;           // Mutex used for chat rooms array
 
 // Function Prototypes
 int init_socket();  // Initialize server socket and return the socket descriptor
@@ -61,9 +61,9 @@ void message_chatroom(int client_sock, const char *sender); // Send a message to
 void list_online_users(int sock);  // List all online users for a client
 void list_chat_rooms(int sock);    // List all available chat rooms for a client
 void join_chat_room(int client_sock, Client *client);  // Join a chat room
-void broadcast_message(int client_sock); // Broadcast message to clients in the same room (excluding a specific socket)
+void broadcast_message(int client_sock); // Broadcast message to clients in the same room (excluding a specific socket which is the sender)
 
 void handle_client(int client_sock);  // Handles menu cases
-void *client_handler(void *client_sock_ptr);  // Threaded function to handle client communication
+void *client_handler(void *client_sock_ptr);  // Threaded function to handle client communic. 
 
 #endif

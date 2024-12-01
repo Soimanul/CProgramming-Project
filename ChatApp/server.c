@@ -2,11 +2,11 @@
 
 
 // Global Variables
-Client clients[MAX_CLIENTS];           // Initialize the array of clients
-ChatRoom chat_rooms[MAX_ROOMS];        // Initialize the array of chat rooms
-int client_count = 0;                  // Initialize the client count to 0
-int room_count = 0;                    // Initialize the room count to 0
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;  // Initialize the mutex for clients
+Client clients[MAX_CLIENTS];           // Initialize array of clients
+ChatRoom chat_rooms[MAX_ROOMS];        // Initialize array of chat rooms
+int client_count = 0;                  // Initialize client count to 0
+int room_count = 0;                    // Initialize room count to 0 because w ehave no rooms at first and no clients
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;  // Initialize the mutex for clients for multithreading and thred safety
 pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;    // Initialize the mutex for rooms
 
 
@@ -61,13 +61,13 @@ int init_socket() {
 }
 
 void private_message(int client_sock, const char *username) { // uses client socket for dirct communication, and usernmae 
-    char buffer[BUFFER_SIZE]; // temp storage
+    char buffer[BUFFER_SIZE]; // temp storage like in the client.c
 
     char target_username[50];
     char message[BUFFER_SIZE];
     int read_size;
     
-    // prompt target user through personal socket 
+    // prompt target user through their own personal socket 
     send(client_sock, "Enter target username: ", 23, 0);
 
     // server recieves answer
@@ -77,16 +77,16 @@ void private_message(int client_sock, const char *username) { // uses client soc
     target_username[strcspn(target_username, "\r\n")] = 0;  // handles possible \n  to clean input
 
     int found = 0;
-    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource 
+    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource at the same time
     for (int i = 0; i < client_count; i++) { 
         if (strcmp(clients[i].username, target_username) == 0) { // loop continues until we find target usernmae
             found = 1;
             break;
         }
     }
-    pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array
+    pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array so others can use it 
 
-    // other possible error: not finidng the username
+    // other possible error: not finidng the usernaame
     if (!found) {
         if (send(client_sock, "User was not found.\n", 21, 0) < 0) { // sends client
             perror("Send failed");
@@ -95,7 +95,7 @@ void private_message(int client_sock, const char *username) { // uses client soc
         return;
     }
 
-    // asks user for desired mesage to send
+    // asks user for what message they wan to send
     send(client_sock, "Enter message: ", 15, 0);
 
     //Server gets the message
@@ -104,9 +104,9 @@ void private_message(int client_sock, const char *username) { // uses client soc
     strcpy(message, buffer);
     message[strcspn(message, "\r\n")] = 0;  
 
-    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource 
+    pthread_mutex_lock(&clients_mutex);  //This is what we use to avoid collisions, it avoids other threads to access same resource exactly like the one above
     for (int i = 0; i < client_count; i++) { 
-        if (strcmp(clients[i].username, target_username) == 0) { // loop continues until we find target usernmae
+        if (strcmp(clients[i].username, target_username) == 0) { // loop continues until we find target username
             char full_message[BUFFER_SIZE];
             snprintf(full_message, BUFFER_SIZE, "%s: %s", username, message);  // usernme: message format
             if (send(clients[i].sock, full_message, strlen(full_message), 0) < 0) { //we need to send error message to client if this process fails 
@@ -117,7 +117,7 @@ void private_message(int client_sock, const char *username) { // uses client soc
             break;
         }
     }
-    pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array
+    pthread_mutex_unlock(&clients_mutex);  //we must stop blocking the clients array again so others an use it
 }
 
 
@@ -213,7 +213,7 @@ void create_chat_room(int client_sock) { // uses client's socket descriptor
         send(client_sock, "Error creating room\n", 20, 0);
     }
 
-    pthread_mutex_unlock(&clients_mutex); // Ensure mutex is unlocked
+    pthread_mutex_unlock(&clients_mutex); // mke sure mutex is unlocked
 }
 
 void message_chatroom(int client_sock, const char *sender) {
@@ -275,7 +275,7 @@ void message_chatroom(int client_sock, const char *sender) {
     // Find room in chat_rooms to send message 
     for (int i = 0; i < room_count; i++) {
         if (strcmp(chat_rooms[i].name, room_name) == 0) {
-            // once chat room is found, we can now send the message (to all except sender)
+            // once chat room is found, we can now send the message (to all except sender cause we dont want them t get their own merssage)
             for (int j = 0; j < chat_rooms[i].client_count; j++) {
                 if (strcmp(chat_rooms[i].clients[j]->room, room_name) == 0 &&
                     strcmp(chat_rooms[i].clients[j]->username, sender) != 0) {
@@ -363,7 +363,7 @@ void join_chat_room(int client_sock, Client *client) {
         }
     }
 
-    // checking for the edge case of a room that doesnt exist
+    // checking for the edge case of a room that doesnt exist and tells the client they asked for a non existing room
     printf("Error: Chat room '%s' does not exist.\n", room_name);
     send(client_sock, "Error: Chat room does not exist.\n", 34, 0);
 
@@ -384,7 +384,7 @@ void broadcast_message(int client_sock) {
     strcpy(message, buffer);
     message[strcspn(message, "\r\n")] = 0;
 
-    // Broadcast the message to all clients excluding the sender
+    // Broadcast the message to all clients other than the sender
     for (int i = 0; i < client_count; i++) {
         if (clients[i].sock != client_sock) {
             if (send(clients[i].sock, message, strlen(message), 0) < 0) {
@@ -452,7 +452,7 @@ void handle_client(int client_sock) {
     int unique;
 
     do {
-        unique = 1; // Assume the username is unique initially
+        unique = 1; // Assume the username is unique initially and we check after
 
         // Receive the username from the client
         if ((read_size = recv(client_sock, username, 50, 0)) > 0) {
@@ -469,7 +469,7 @@ void handle_client(int client_sock) {
             pthread_mutex_unlock(&clients_mutex); // Unlock after checking
 
             if (!unique) {
-                send(client_sock, "Username already taken. Try again.\nEnter your username:", 56, 0);
+                send(client_sock, "Username taken. Try again.\nEnter your username:", 56, 0);
             }
         } 
     } while (!unique);
@@ -488,7 +488,7 @@ void handle_client(int client_sock) {
         printf("Received message from %s: %s\n", username, buffer);
         buffer[strcspn(buffer, "\r\n")] = 0;
 
-        int choice = atoi(buffer);
+        int choice = atoi(buffer); // this is the menu they will see with each option and we have stitch case for each. if they enter smthg that isnt here they will be asked for another input
         switch (choice) {
             case 1: {
                 private_message(client_sock, username);
@@ -533,7 +533,7 @@ void handle_client(int client_sock) {
     if (read_size == 0) {
         printf("Client disconnected\n");
     } else if (read_size == -1) {
-        perror("Recv failed");
+        perror("Recv failed");// if recv fails we print errorr message. it fails is printsize is -1
     }
 
 
